@@ -149,29 +149,150 @@ function saveApiKey(apiKey) {
   writeFileSync(CRED_PATH, encryptData(apiKey) + "\n", { mode: 0o600 });
 }
 
-// ─── Interactive Login ───────────────────────────────────
-if (process.argv.includes("--login")) {
-  process.stderr.write("Enter your Corben API key (cb_...): ");
-  const chunks = [];
-  process.stdin.setEncoding("utf8");
-  process.stdin.on("data", (chunk) => {
-    chunks.push(chunk);
-    const input = chunks.join("").trim();
-    if (input.startsWith("cb_") && input.length > 10) {
-      saveApiKey(input);
-      console.error(`API key encrypted and saved to ${CRED_PATH}`);
-      console.error("You can now run the MCP server without setting CORBEN_API_KEY.");
-      process.exit(0);
-    }
+// ─── CLI Helpers ─────────────────────────────────────────
+
+function prompt(question) {
+  return new Promise((resolve) => {
+    process.stderr.write(question);
+    const chunks = [];
+    process.stdin.setEncoding("utf8");
+    process.stdin.once("data", (chunk) => resolve(chunk.trim()));
   });
-  process.stdin.on("end", () => {
-    const input = chunks.join("").trim();
-    if (!input.startsWith("cb_")) {
-      console.error("Error: API key must start with cb_");
+}
+
+async function readLines(questions) {
+  // Read all stdin lines upfront (works with both TTY and piped input)
+  const lines = [];
+  const keys = Object.keys(questions);
+
+  if (process.stdin.isTTY) {
+    const { createInterface } = await import("readline");
+    const rl = createInterface({ input: process.stdin, output: process.stderr });
+    for (const key of keys) {
+      lines.push(await new Promise((resolve) => rl.question(questions[key], resolve)));
+    }
+    rl.close();
+  } else {
+    // Piped input: read all at once
+    const data = await new Promise((resolve) => {
+      const chunks = [];
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", (c) => chunks.push(c));
+      process.stdin.on("end", () => resolve(chunks.join("")));
+      process.stdin.resume();
+    });
+    lines.push(...data.trim().split("\n"));
+    // Print prompts to stderr for visibility
+    keys.forEach((k, i) => process.stderr.write(questions[k] + (lines[i] || "") + "\n"));
+  }
+
+  const answers = {};
+  keys.forEach((k, i) => { answers[k] = (lines[i] || "").trim(); });
+  return answers;
+}
+
+// ─── CLI: --key (manual API key entry) ───────────────────
+if (process.argv.includes("--key") || process.argv.includes("--login")) {
+  const { key } = await readLines({ key: "Enter your Corben API key (cb_...): " });
+  if (!key.startsWith("cb_") || key.length < 20) {
+    console.error("Error: API key must start with cb_ and be at least 20 characters.");
+    process.exit(1);
+  }
+  saveApiKey(key);
+  console.error(`API key encrypted and saved to ${CRED_PATH}`);
+  process.exit(0);
+}
+
+// ─── CLI: --signup (create account from terminal) ────────
+if (process.argv.includes("--signup")) {
+  console.error("Create a Corben account\n");
+  const answers = await readLines({
+    email: "Email: ",
+    password: "Password (min 8 chars): ",
+    name: "Display name (optional): ",
+  });
+
+  if (!answers.email || !answers.password) {
+    console.error("Error: Email and password are required.");
+    process.exit(1);
+  }
+  if (answers.password.length < 8) {
+    console.error("Error: Password must be at least 8 characters.");
+    process.exit(1);
+  }
+
+  console.error("Creating account...");
+  try {
+    const res = await fetch(`${API_URL}/mcp/signup`, {
+      method: "POST",
+      signal: AbortSignal.timeout(10000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: answers.email,
+        password: answers.password,
+        name: answers.name || undefined,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 409) {
+        console.error("Account already exists. Run with --login-email to log in instead.");
+      } else {
+        console.error(`Error: ${data.error}`);
+      }
       process.exit(1);
     }
+
+    // Save the API key
+    saveApiKey(data.api_key);
+    console.error(`\nAccount created for ${data.email}`);
+    console.error(`API key encrypted and saved to ${CRED_PATH}`);
+    console.error("You can now run the MCP server.");
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
+// ─── CLI: --login-email (log in with email/password) ─────
+if (process.argv.includes("--login-email")) {
+  console.error("Log in to Corben\n");
+  const answers = await readLines({
+    email: "Email: ",
+    password: "Password: ",
   });
-  await new Promise(() => {});
+
+  if (!answers.email || !answers.password) {
+    console.error("Error: Email and password are required.");
+    process.exit(1);
+  }
+
+  console.error("Logging in...");
+  try {
+    const res = await fetch(`${API_URL}/mcp/login`, {
+      method: "POST",
+      signal: AbortSignal.timeout(10000),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: answers.email, password: answers.password }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      console.error(`Error: ${data.error}`);
+      process.exit(1);
+    }
+
+    saveApiKey(data.api_key);
+    console.error(`\nLogged in as ${data.email}`);
+    console.error(`API key encrypted and saved to ${CRED_PATH}`);
+    console.error("You can now run the MCP server.");
+  } catch (err) {
+    console.error(`Error: ${err.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
 }
 
 // ─── Device Registration ─────────────────────────────────
@@ -332,7 +453,9 @@ async function getSessionToken() {
   return API_KEY;
 }
 
-// ─── Authenticated fetch with IP-change recovery ─────────
+// ─── Authenticated fetch with auto-recovery ──────────────
+// Handles: expired tokens (sleep/wake), IP changes, any 401.
+// Retries once with a fresh token before giving up.
 async function authedFetch(url, opts = {}) {
   const token = await getSessionToken();
   const res = await fetch(url, {
@@ -340,19 +463,18 @@ async function authedFetch(url, opts = {}) {
     headers: { ...opts.headers, Authorization: `Bearer ${token}` },
   });
 
-  // IP mismatch → clear session, re-auth, retry once
+  // Any 401 → clear session, re-auth, retry once
   if (res.status === 401) {
-    const body = await res.json().catch(() => ({}));
-    if (body.code === "IP_MISMATCH") {
-      console.error("IP changed — re-authenticating...");
-      sessionToken = null;
-      sessionExpiry = 0;
-      const newToken = await getSessionToken();
-      return fetch(url, {
-        ...opts,
-        headers: { ...opts.headers, Authorization: `Bearer ${newToken}` },
-      });
-    }
+    const body = await res.clone().json().catch(() => ({}));
+    const reason = body.code === "IP_MISMATCH" ? "IP changed" : "token expired or invalid";
+    console.error(`Auth failed (${reason}) — re-authenticating...`);
+    sessionToken = null;
+    sessionExpiry = 0;
+    const newToken = await getSessionToken();
+    return fetch(url, {
+      ...opts,
+      headers: { ...opts.headers, Authorization: `Bearer ${newToken}` },
+    });
   }
 
   return res;

@@ -78,53 +78,74 @@ function Get-ApiKey {
     Write-Host "Authentication" -ForegroundColor White
     Write-Host ("─" * 37)
     Write-Host ""
-    Write-Host "You need a Corben API key (starts with cb_)."
-    Write-Host ""
-    Write-Host "  1. Go to $SignupUrl" -ForegroundColor Cyan
-    Write-Host "  2. Create an account (or log in)"
-    Write-Host "  3. Go to Settings -> API Keys -> Create"
-    Write-Host "  4. Copy the key and paste it below"
+    Write-Host "  1. Create a new account" -ForegroundColor Cyan
+    Write-Host "  2. Log in to existing account" -ForegroundColor Cyan
+    Write-Host "  3. Paste an API key manually" -ForegroundColor Cyan
     Write-Host ""
 
-    while ($true) {
-        $apiKey = Read-Host "Paste your API key (cb_...)" -AsSecureString
-        $apiKeyPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
-            [Runtime.InteropServices.Marshal]::SecureStringToBSTR($apiKey))
+    $choice = Read-Host "Choice [1/2/3]"
 
-        if ($apiKeyPlain -notmatch "^cb_") {
-            Write-Host "API key must start with cb_" -ForegroundColor Red
-            continue
-        }
+    switch ($choice) {
+        "1" {
+            Write-Host ""
+            $email = Read-Host "Email"
+            $password = Read-Host "Password (min 8 chars)" -AsSecureString
+            $pwPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
+            $displayName = Read-Host "Display name (optional)"
 
-        if ($apiKeyPlain.Length -lt 20) {
-            Write-Host "API key looks too short" -ForegroundColor Red
-            continue
-        }
-
-        # Verify key works
-        Write-Host -NoNewline "Verifying..."
-        try {
-            $response = Invoke-WebRequest -Uri "$ApiUrl/mcp" -Headers @{
-                Authorization = "Bearer $apiKeyPlain"
-            } -UseBasicParsing -ErrorAction Stop
-            Write-Host " [OK] Valid" -ForegroundColor Green
-        } catch {
-            $statusCode = $_.Exception.Response.StatusCode.Value__
-            if ($statusCode -eq 401) {
-                Write-Host " [FAIL] Invalid key" -ForegroundColor Red
-                continue
-            } else {
-                Write-Host " [WARN] Could not reach API (status: $statusCode)" -ForegroundColor Yellow
-                $saveAnyway = Read-Host "Save anyway? [y/N]"
-                if ($saveAnyway -notmatch "^[Yy]") { continue }
+            Write-Host -NoNewline "Creating account..."
+            try {
+                $body = @{ email = $email; password = $pwPlain; name = $displayName } | ConvertTo-Json
+                $resp = Invoke-RestMethod -Uri "$ApiUrl/mcp/signup" -Method Post -Body $body -ContentType "application/json"
+                $resp.api_key | node "$InstallDir\index.js" --key 2>$null
+                Write-Host " [OK] Account created for $($resp.email)" -ForegroundColor Green
+            } catch {
+                $errBody = $_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue
+                Write-Host " [FAIL] $($errBody.error ?? $_.Exception.Message)" -ForegroundColor Red
+                if ($errBody.error -match "already exists") {
+                    Write-Host "Try option 2 (log in) instead."
+                }
+                return
             }
         }
+        "2" {
+            Write-Host ""
+            $email = Read-Host "Email"
+            $password = Read-Host "Password" -AsSecureString
+            $pwPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+                [Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
 
-        # Save encrypted via --login
-        $apiKeyPlain | node "$InstallDir\index.js" --login 2>$null
-        Write-Host "[OK] API key encrypted and saved" -ForegroundColor Green
-        break
+            Write-Host -NoNewline "Logging in..."
+            try {
+                $body = @{ email = $email; password = $pwPlain } | ConvertTo-Json
+                $resp = Invoke-RestMethod -Uri "$ApiUrl/mcp/login" -Method Post -Body $body -ContentType "application/json"
+                $resp.api_key | node "$InstallDir\index.js" --key 2>$null
+                Write-Host " [OK] Logged in as $($resp.email)" -ForegroundColor Green
+            } catch {
+                $errBody = $_.ErrorDetails.Message | ConvertFrom-Json -ErrorAction SilentlyContinue
+                Write-Host " [FAIL] $($errBody.error ?? $_.Exception.Message)" -ForegroundColor Red
+                return
+            }
+        }
+        "3" {
+            Write-Host ""
+            Write-Host "Get your API key from: $SignupUrl -> Settings -> API Keys"
+            $apiKey = Read-Host "Paste your API key (cb_...)"
+            if ($apiKey -notmatch "^cb_" -or $apiKey.Length -lt 20) {
+                Write-Host "Invalid key format" -ForegroundColor Red
+                return
+            }
+            $apiKey | node "$InstallDir\index.js" --key 2>$null
+            Write-Host "[OK] API key saved" -ForegroundColor Green
+        }
+        default {
+            Write-Host "Invalid choice" -ForegroundColor Red
+            return
+        }
     }
+
+    Write-Host "[OK] Credentials encrypted and saved" -ForegroundColor Green
 }
 
 function Configure-ClaudeDesktop {

@@ -73,10 +73,10 @@ install_server() {
   echo -e "${GREEN}✓${NC} Server installed at $INSTALL_DIR"
 }
 
-get_api_key() {
+authenticate() {
   # Check if already authenticated
   if [ -f "$CRED_FILE" ]; then
-    echo -e "${GREEN}✓${NC} Existing credentials found at $CRED_FILE"
+    echo -e "${GREEN}✓${NC} Existing credentials found"
     read -rp "Use existing credentials? [Y/n] " use_existing
     if [[ "$use_existing" =~ ^[Nn] ]]; then
       rm "$CRED_FILE"
@@ -89,53 +89,116 @@ get_api_key() {
   echo -e "${BOLD}Authentication${NC}"
   echo "─────────────────────────────────────"
   echo ""
-  echo "You need a Corben API key (starts with cb_)."
+  echo "  Choose one:"
   echo ""
-  echo -e "  ${BLUE}1.${NC} Go to ${BOLD}$SIGNUP_URL${NC}"
-  echo -e "  ${BLUE}2.${NC} Create an account (or log in)"
-  echo -e "  ${BLUE}3.${NC} Go to Settings → API Keys → Create"
-  echo -e "  ${BLUE}4.${NC} Copy the key and paste it below"
+  echo -e "  ${BLUE}1.${NC} Create a new account"
+  echo -e "  ${BLUE}2.${NC} Log in to existing account"
+  echo -e "  ${BLUE}3.${NC} Paste an API key manually"
   echo ""
 
-  while true; do
-    read -rsp "Paste your API key (hidden): " api_key
-    echo ""
+  read -rp "Choice [1/2/3]: " choice
 
-    if [[ ! "$api_key" =~ ^cb_ ]]; then
-      echo -e "${RED}API key must start with cb_${NC}"
-      continue
-    fi
+  case "$choice" in
+    1)
+      # Signup
+      echo ""
+      read -rp "Email: " email
+      read -rsp "Password (min 8 chars): " password
+      echo ""
+      read -rp "Display name (optional): " display_name
 
-    if [ ${#api_key} -lt 20 ]; then
-      echo -e "${RED}API key looks too short${NC}"
-      continue
-    fi
+      echo -n "Creating account..."
+      local response
+      response=$(curl -s -X POST "$API_URL/mcp/signup" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\",\"password\":\"$password\",\"name\":\"$display_name\"}" 2>/dev/null)
 
-    # Verify key works
-    echo -n "Verifying..."
-    local status
-    status=$(curl -s -o /dev/null -w "%{http_code}" \
-      -H "Authorization: Bearer $api_key" \
-      "$API_URL/mcp" 2>/dev/null)
+      local api_key
+      api_key=$(echo "$response" | node -e "process.stdin.on('data',d=>{try{const j=JSON.parse(d);if(j.api_key)console.log(j.api_key);else{console.error(j.error||'unknown error');process.exit(1)}}catch{console.error('invalid response');process.exit(1)}})" 2>/dev/null)
 
-    if [ "$status" = "200" ]; then
-      echo -e " ${GREEN}✓ Valid${NC}"
-      break
-    elif [ "$status" = "401" ]; then
-      echo -e " ${RED}✗ Invalid key${NC}"
-    else
-      echo -e " ${YELLOW}✗ Could not reach API (status: $status)${NC}"
-      read -rp "Save anyway? [y/N] " save_anyway
-      if [[ "$save_anyway" =~ ^[Yy] ]]; then
-        break
+      if [ $? -ne 0 ] || [ -z "$api_key" ]; then
+        local error_msg
+        error_msg=$(echo "$response" | node -e "process.stdin.on('data',d=>{try{console.log(JSON.parse(d).error||'unknown error')}catch{console.log('could not reach API')}})" 2>/dev/null)
+        echo -e " ${RED}✗ $error_msg${NC}"
+
+        if echo "$error_msg" | grep -q "already exists"; then
+          echo "Try option 2 (log in) instead."
+        fi
+        return 1
       fi
-      continue
-    fi
-  done
 
-  # Save encrypted via the MCP server's --login
-  echo "$api_key" | node "$INSTALL_DIR/index.js" --login 2>/dev/null
-  echo -e "${GREEN}✓${NC} API key encrypted and saved"
+      echo "$api_key" | node "$INSTALL_DIR/index.js" --key 2>/dev/null
+      echo -e " ${GREEN}✓ Account created${NC}"
+      ;;
+    2)
+      # Login
+      echo ""
+      read -rp "Email: " email
+      read -rsp "Password: " password
+      echo ""
+
+      echo -n "Logging in..."
+      local response
+      response=$(curl -s -X POST "$API_URL/mcp/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>/dev/null)
+
+      local api_key
+      api_key=$(echo "$response" | node -e "process.stdin.on('data',d=>{try{const j=JSON.parse(d);if(j.api_key)console.log(j.api_key);else{console.error(j.error||'unknown error');process.exit(1)}}catch{console.error('invalid response');process.exit(1)}})" 2>/dev/null)
+
+      if [ $? -ne 0 ] || [ -z "$api_key" ]; then
+        local error_msg
+        error_msg=$(echo "$response" | node -e "process.stdin.on('data',d=>{try{console.log(JSON.parse(d).error||'unknown error')}catch{console.log('could not reach API')}})" 2>/dev/null)
+        echo -e " ${RED}✗ $error_msg${NC}"
+        return 1
+      fi
+
+      echo "$api_key" | node "$INSTALL_DIR/index.js" --key 2>/dev/null
+      echo -e " ${GREEN}✓ Logged in${NC}"
+      ;;
+    3)
+      # Manual API key
+      echo ""
+      echo "Get your API key from: ${BOLD}$SIGNUP_URL${NC} → Settings → API Keys"
+      echo ""
+      while true; do
+        read -rsp "Paste your API key (hidden): " api_key
+        echo ""
+
+        if [[ ! "$api_key" =~ ^cb_ ]] || [ ${#api_key} -lt 20 ]; then
+          echo -e "${RED}Invalid key format (must start with cb_ and be 20+ chars)${NC}"
+          continue
+        fi
+
+        echo -n "Verifying..."
+        local status
+        status=$(curl -s -o /dev/null -w "%{http_code}" \
+          -H "Authorization: Bearer $api_key" \
+          "$API_URL/mcp" 2>/dev/null)
+
+        if [ "$status" = "200" ]; then
+          echo -e " ${GREEN}✓ Valid${NC}"
+          echo "$api_key" | node "$INSTALL_DIR/index.js" --key 2>/dev/null
+          break
+        elif [ "$status" = "401" ]; then
+          echo -e " ${RED}✗ Invalid key${NC}"
+        else
+          echo -e " ${YELLOW}✗ Could not reach API${NC}"
+          read -rp "Save anyway? [y/N] " save_anyway
+          if [[ "$save_anyway" =~ ^[Yy] ]]; then
+            echo "$api_key" | node "$INSTALL_DIR/index.js" --key 2>/dev/null
+            break
+          fi
+        fi
+      done
+      ;;
+    *)
+      echo "Invalid choice"
+      return 1
+      ;;
+  esac
+
+  echo -e "${GREEN}✓${NC} Credentials encrypted and saved"
 }
 
 detect_clients() {
@@ -339,7 +402,7 @@ main() {
   echo ""
   install_server
   echo ""
-  get_api_key
+  authenticate
   setup_clients
   print_summary
 }
