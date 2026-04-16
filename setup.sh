@@ -15,7 +15,7 @@ REPO_URL="https://github.com/gatordevin/corben-mcp.git"
 INSTALL_DIR="$HOME/.corben-mcp"
 CRED_FILE="$HOME/.corben-mcp/credentials.enc"
 API_URL="https://api.corben.world"
-SIGNUP_URL="https://corben.world/signup"
+SIGNUP_URL="https://panel.corben.world"
 
 # Colors
 RED='\033[0;31m'
@@ -91,10 +91,10 @@ get_api_key() {
   echo ""
   echo "You need a Corben API key (starts with cb_)."
   echo ""
-  echo -e "  ${BLUE}1.${NC} Sign up or log in: ${BOLD}$SIGNUP_URL${NC}"
-  echo -e "  ${BLUE}2.${NC} Go to Settings → API Keys"
-  echo -e "  ${BLUE}3.${NC} Create a new API key"
-  echo -e "  ${BLUE}4.${NC} Copy it and paste below"
+  echo -e "  ${BLUE}1.${NC} Go to ${BOLD}$SIGNUP_URL${NC}"
+  echo -e "  ${BLUE}2.${NC} Create an account (or log in)"
+  echo -e "  ${BLUE}3.${NC} Go to Settings → API Keys → Create"
+  echo -e "  ${BLUE}4.${NC} Copy the key and paste it below"
   echo ""
 
   while true; do

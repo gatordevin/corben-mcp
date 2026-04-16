@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 $RepoUrl = "https://github.com/gatordevin/corben-mcp.git"
 $InstallDir = "$env:USERPROFILE\.corben-mcp"
 $ApiUrl = "https://api.corben.world"
-$SignupUrl = "https://corben.world/signup"
+$SignupUrl = "https://panel.corben.world"
 
 function Write-Banner {
     Write-Host ""
@@ -80,10 +80,10 @@ function Get-ApiKey {
     Write-Host ""
     Write-Host "You need a Corben API key (starts with cb_)."
     Write-Host ""
-    Write-Host "  1. Sign up or log in: $SignupUrl" -ForegroundColor Cyan
-    Write-Host "  2. Go to Settings -> API Keys"
-    Write-Host "  3. Create a new API key"
-    Write-Host "  4. Copy it and paste below"
+    Write-Host "  1. Go to $SignupUrl" -ForegroundColor Cyan
+    Write-Host "  2. Create an account (or log in)"
+    Write-Host "  3. Go to Settings -> API Keys -> Create"
+    Write-Host "  4. Copy the key and paste it below"
     Write-Host ""
 
     while ($true) {

@@ -151,7 +151,7 @@ Session tokens are bound to the client's IP address. If a token is used from a d
 
 ### 1. Get an API Key
 
-1. Go to [corben.world/signup](https://corben.world/signup) and create an account
+1. Go to [panel.corben.world](https://panel.corben.world) and create an account
 2. Go to **Settings → API Keys**
 3. Click **Create API Key**
 4. Copy the key (starts with `cb_`)
