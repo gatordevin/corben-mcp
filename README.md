@@ -6,8 +6,14 @@ Works with **Claude Desktop**, **Claude Code**, **Cursor**, **Windsurf**, and an
 
 ## One-Line Install
 
+**macOS / Linux:**
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gatordevin/corben-mcp/main/setup.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/gatordevin/corben-mcp/main/setup.ps1 | iex
 ```
 
 This will:
@@ -22,16 +28,24 @@ Or clone and run manually:
 git clone https://github.com/gatordevin/corben-mcp.git
 cd corben-mcp
 npm install
-./setup.sh
+./setup.sh          # macOS/Linux
+.\setup.ps1         # Windows
 ```
 
 ## Give This to Your Agent
 
 Paste this into any AI agent chat to set it up:
 
+**macOS/Linux:**
 ```
 Run this command to install Corben MCP tools:
 curl -fsSL https://raw.githubusercontent.com/gatordevin/corben-mcp/main/setup.sh | bash
+```
+
+**Windows:**
+```
+Run this command in PowerShell to install Corben MCP tools:
+iwr -useb https://raw.githubusercontent.com/gatordevin/corben-mcp/main/setup.ps1 | iex
 ```
 
 Or if the agent has terminal access, it can do it directly.
@@ -79,13 +93,57 @@ The MCP server acts as a bridge. Your AI client talks to it over the standard MC
 
 ## Security
 
-- **Encrypted credentials** — API key is AES-256-GCM encrypted on disk, not plaintext
-- **Session tokens** — Permanent key exchanged for 15-minute session tokens on startup
-- **Auto-refresh** — Session tokens refresh automatically, permanent key used only once
-- **HTTPS** — All API communication is TLS encrypted
-- **Revocable** — Delete the key from your dashboard to instantly cut access
+This implements the security model recommended by [NIST SP 800-63B](https://pages.nist.gov/800-63-3/sp800-63b.html) for headless agent authentication:
 
-Your API key is **never** stored in plaintext config files.
+### Hardware-Bound Identity
+
+On first run, the server:
+1. Reads your machine's **hardware UUID** (macOS IOPlatformUUID, Linux machine-id, Windows SMBIOS UUID)
+2. Generates an **ECDSA P-256 keypair** — private key encrypted with a machine-derived AES-256-GCM key
+3. **Registers the device** with the Corben API (public key + machine fingerprint)
+
+The private key **never leaves the device** and **cannot be decrypted on another machine**.
+
+### Challenge-Response Authentication
+
+After initial registration, no secrets are sent over the wire:
+
+```
+1. Client sends key fingerprint → Server looks up device
+2. Server sends random challenge (32 bytes)
+3. Client signs challenge with ECDSA private key
+4. Server verifies signature with registered public key
+5. Server issues IP-bound session token (15 min TTL)
+```
+
+Even if someone intercepts all network traffic, they cannot authenticate without the hardware-bound private key.
+
+### IP-Locked Tokens
+
+Session tokens are bound to the client's IP address. If a token is used from a different IP:
+- Token is **immediately invalidated**
+- Event is logged to the device audit trail
+- Client automatically re-authenticates
+
+### Defense in Depth
+
+| Layer | Protection |
+|-------|-----------|
+| **At rest** | API key + private key AES-256-GCM encrypted, tied to hardware UUID |
+| **In transit** | HTTPS/TLS for all API communication |
+| **Authentication** | ECDSA challenge-response (no secret over wire) |
+| **Authorization** | 15-min session tokens, IP-locked, device-bound |
+| **Revocation** | Instant device revoke from dashboard, audit log of all auth events |
+| **Theft resistance** | Private key undecryptable on different hardware |
+
+### Platform Support
+
+| OS | Machine ID Source | Security Level |
+|----|-------------------|---------------|
+| macOS | `IOPlatformUUID` (hardware-fused) | High |
+| Linux | `/etc/machine-id` or DMI `product_uuid` | Medium-High |
+| Windows | `Win32_ComputerSystemProduct.UUID` (SMBIOS) | High |
+| Fallback | SHA-256 of hostname + homedir | Medium |
 
 ---
 
