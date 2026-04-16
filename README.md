@@ -7,7 +7,7 @@ Works with **Claude Desktop**, **Claude Code**, **Cursor**, **Windsurf**, and an
 ## One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/corben-world/corben-mcp/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gatordevin/corben-mcp/main/setup.sh | bash
 ```
 
 This will:
@@ -19,7 +19,7 @@ This will:
 Or clone and run manually:
 
 ```bash
-git clone https://github.com/corben-world/corben-mcp.git
+git clone https://github.com/gatordevin/corben-mcp.git
 cd corben-mcp
 npm install
 ./setup.sh
@@ -31,7 +31,7 @@ Paste this into any AI agent chat to set it up:
 
 ```
 Run this command to install Corben MCP tools:
-curl -fsSL https://raw.githubusercontent.com/corben-world/corben-mcp/main/setup.sh | bash
+curl -fsSL https://raw.githubusercontent.com/gatordevin/corben-mcp/main/setup.sh | bash
 ```
 
 Or if the agent has terminal access, it can do it directly.
@@ -101,7 +101,7 @@ Your API key is **never** stored in plaintext config files.
 ### 2. Install
 
 ```bash
-git clone https://github.com/corben-world/corben-mcp.git ~/.corben-mcp
+git clone https://github.com/gatordevin/corben-mcp.git ~/.corben-mcp
 cd ~/.corben-mcp
 npm install
 ```

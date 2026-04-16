@@ -11,7 +11,7 @@ set -euo pipefail
 #   ./setup.sh
 # ──────────────────────────────────────────────────────────
 
-REPO_URL="https://github.com/corben-world/corben-mcp.git"
+REPO_URL="https://github.com/gatordevin/corben-mcp.git"
 INSTALL_DIR="$HOME/.corben-mcp"
 CRED_FILE="$HOME/.corben-mcp-credentials"
 API_URL="https://api.corben.world"
