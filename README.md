@@ -1,6 +1,6 @@
 # Corben MCP Server
 
-Give your AI agent superpowers. 220+ tools for building websites, sending email, managing contacts, invoicing, databases, automation, and more — all through one connection.
+Give your AI agent superpowers. 440+ tools for building websites, sending email, managing contacts, invoicing, databases, automation, and more — all through one connection.
 
 Works with **Claude Desktop**, **Claude Code**, **Cursor**, **Windsurf**, and any MCP-compatible client.
 
@@ -77,7 +77,10 @@ Once connected, your AI agent can:
 | **Analytics** | Site traffic, metrics, dashboards |
 | **Web Browsing** | Fetch pages, search the web, take screenshots |
 
-**220+ tools total** — the full list is dynamically loaded from the API.
+**440+ tools total** — the full list is loaded from the API at connect time, so this
+figure is only ever approximate. How many *you* can call depends on your key: a key
+restricted by `tool_categories`, or without delete permission, is shown a smaller
+catalogue on purpose. `GET /mcp` reports the exact count for your key as `tool_count`.
 
 ---
 
